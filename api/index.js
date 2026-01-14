@@ -2,9 +2,13 @@
 const express = require('express');
 const axios = require('axios');
 const bodyParser = require('body-parser');
+const https = require('https'); // Necesario para el arreglo de red
 
 const app = express();
 app.use(bodyParser.json());
+
+// Agente para forzar IPv4 (Arregla el error ETIMEDOUT en Vercel)
+const httpsAgent = new https.Agent({ family: 4 });
 
 // Verificación del Token (GET)
 app.get('/api', (req, res) => {
@@ -30,31 +34,23 @@ app.post('/api', async (req, res) => {
     try {
         const body = req.body;
 
-        // 1. Responder a Meta inmediatamente para evitar timeouts
-        res.status(200).send('EVENT_RECEIVED');
-
-        // 2. Verificar si es un evento de Instagram
         if (body.object === 'instagram') {
-
-            // Recorrer las entradas (entries)
             for (const entry of body.entry) {
-
-                // Opción A: Es un COMENTARIO (viene en 'changes')
                 if (entry.changes) {
                     for (const change of entry.changes) {
                         if (change.field === 'comments') {
                             const value = change.value;
-                            const text = value.text || ""; // El texto del comentario
-                            const commentId = value.id;    // ID para responder
-                            const userId = value.from.id;  // Quién comentó
+                            const text = value.text || "";
+                            const commentId = value.id;
+                            const userId = value.from.id;
 
                             console.log(`📝 Texto recibido (Comentario): "${text}"`);
 
-                            // Lógica de Palabras Clave (Flexible)
+                            // Lógica de detección
                             const mensajeLimpio = text.toLowerCase();
-
                             if (mensajeLimpio.includes('precio') || mensajeLimpio.includes('info')) {
                                 console.log('🚀 Palabra clave detectada! Ejecutando respuesta...');
+                                // Esperamos a que se envíe la respuesta ANTES de cerrar con Meta
                                 await responderInstagram(commentId, userId);
                             } else {
                                 console.log('ℹ️ Ignorando: No contiene palabras clave.');
@@ -65,22 +61,25 @@ app.post('/api', async (req, res) => {
             }
         }
 
+        // Respondemos a Meta AL FINAL para asegurar que el proceso no se corte
+        res.status(200).send('EVENT_RECEIVED');
+
     } catch (error) {
-        console.error('❌ Error procesando el evento:', error.message);
+        console.error('❌ Error general en el endpoint:', error.message);
+        res.status(500).send('ERROR');
     }
 });
 
-// Función auxiliar para responder
-// Función auxiliar para responder
+// Función para responder
 async function responderInstagram(commentId, userId) {
     const token = process.env.PAGE_ACCESS_TOKEN;
-    const version = 'v21.0'; // ✅ Actualizado a una versión más estable
+    const version = 'v21.0';
 
     try {
-        // Configuración de Axios para evitar esperas eternas (Timeout de 10s)
         const config = {
-            timeout: 10000,
-            headers: { Authorization: `Bearer ${token}` }
+            timeout: 5000, // 5 segundos máximo
+            headers: { Authorization: `Bearer ${token}` },
+            httpsAgent: httpsAgent // 👈 ESTO ES LA MAGIA DEL FIX IPV4
         };
 
         // 1. Responder al Comentario Público
@@ -104,7 +103,6 @@ async function responderInstagram(commentId, userId) {
         console.log('✅ DM enviado correctamente');
 
     } catch (error) {
-        // Mostrar error detallado si falla
         const errorMsg = error.response ? JSON.stringify(error.response.data) : error.message;
         console.error(`❌ Error enviando respuesta (API): ${errorMsg}`);
     }
