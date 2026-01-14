@@ -100,7 +100,7 @@ async function responderInstagram(commentId) {
 
         // 2. DM Privado
         await axios.post(
-            `https://graph.facebook.com/${version}/me/messages`,
+            `https://graph.facebook.com/${version}/17841469609226927/messages`,
             {
                 recipient: { comment_id: commentId },
                 message: { text: "Hola 👋 Aquí tienes la lista de precios que pediste: [Tu Info]" },
