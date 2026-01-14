@@ -2,15 +2,15 @@
 const express = require('express');
 const axios = require('axios');
 const bodyParser = require('body-parser');
-const https = require('https'); // Necesario para el arreglo de red
+const https = require('https');
 
 const app = express();
 app.use(bodyParser.json());
 
-// Agente para forzar IPv4 (Arregla el error ETIMEDOUT en Vercel)
+// Agente para evitar errores de red en Vercel
 const httpsAgent = new https.Agent({ family: 4 });
 
-// Verificación del Token (GET)
+// GET: Verificación del Webhook
 app.get('/api', (req, res) => {
     const VERIFY_TOKEN = process.env.VERIFY_TOKEN;
     const mode = req.query['hub.mode'];
@@ -19,7 +19,7 @@ app.get('/api', (req, res) => {
 
     if (mode && token) {
         if (mode === 'subscribe' && token === VERIFY_TOKEN) {
-            console.log('✅ Webhook verificado correctamente');
+            console.log('✅ Webhook verificado');
             res.status(200).send(challenge);
         } else {
             res.sendStatus(403);
@@ -29,7 +29,7 @@ app.get('/api', (req, res) => {
     }
 });
 
-// Recepción de Eventos (POST)
+// POST: Recepción de mensajes
 app.post('/api', async (req, res) => {
     try {
         const body = req.body;
@@ -42,18 +42,26 @@ app.post('/api', async (req, res) => {
                             const value = change.value;
                             const text = value.text || "";
                             const commentId = value.id;
-                            const userId = value.from.id;
+                            const userId = value.from.id; // ID de quien comenta
 
-                            console.log(`📝 Texto recibido (Comentario): "${text}"`);
+                            console.log(`📝 Texto recibido: "${text}" de usuario: ${userId}`);
+
+                            // 🛑 PROTECCIÓN CONTRA BUCLE INFINITO
+                            // Si el texto ya dice "Te envié los detalles", ES EL BOT HABLANDO.
+                            // Ignoramos inmediatamente.
+                            if (text.includes('Te envié los detalles')) {
+                                console.log('🤖 Detectada auto-respuesta. Ignorando para evitar bucle.');
+                                continue;
+                            }
 
                             // Lógica de detección
                             const mensajeLimpio = text.toLowerCase();
+
                             if (mensajeLimpio.includes('precio') || mensajeLimpio.includes('info')) {
-                                console.log('🚀 Palabra clave detectada! Ejecutando respuesta...');
-                                // Esperamos a que se envíe la respuesta ANTES de cerrar con Meta
-                                await responderInstagram(commentId, userId);
+                                console.log('🚀 Palabra clave detectada! Respondiendo...');
+                                await responderInstagram(commentId);
                             } else {
-                                console.log('ℹ️ Ignorando: No contiene palabras clave.');
+                                console.log('ℹ️ Ignorando: No hay palabras clave.');
                             }
                         }
                     }
@@ -61,50 +69,50 @@ app.post('/api', async (req, res) => {
             }
         }
 
-        // Respondemos a Meta AL FINAL para asegurar que el proceso no se corte
         res.status(200).send('EVENT_RECEIVED');
 
     } catch (error) {
-        console.error('❌ Error general en el endpoint:', error.message);
+        console.error('❌ Error:', error.message);
         res.status(500).send('ERROR');
     }
 });
 
-// Función para responder
-async function responderInstagram(commentId, userId) {
+async function responderInstagram(commentId) {
+    // ⚠️ ASEGÚRATE DE QUE ESTE TOKEN SEA DE 'PÁGINA' (EMPIEZA POR EAA...)
     const token = process.env.PAGE_ACCESS_TOKEN;
     const version = 'v21.0';
 
     try {
         const config = {
-            timeout: 5000, // 5 segundos máximo
+            timeout: 5000,
             headers: { Authorization: `Bearer ${token}` },
-            httpsAgent: httpsAgent // 👈 ESTO ES LA MAGIA DEL FIX IPV4
+            httpsAgent: httpsAgent
         };
 
-        // 1. Responder al Comentario Público
+        // 1. Respuesta Pública (CAMBIADA PARA NO ACTIVAR EL BUCLE)
+        // Usamos "detalles" en lugar de "info"
         await axios.post(
             `https://graph.facebook.com/${version}/${commentId}/replies`,
-            { message: "¡Hola! Te envié la info al privado 📩✨" },
+            { message: "¡Hola! Te envié los detalles al privado 📩✨" },
             config
         );
         console.log('✅ Respuesta pública enviada');
 
-        // 2. Enviar Mensaje Privado (DM)
+        // 2. DM Privado
         await axios.post(
             `https://graph.facebook.com/${version}/me/messages`,
             {
                 recipient: { comment_id: commentId },
-                message: { text: "Hola 👋 Aquí tienes la información de precios: [Tu Info Aquí]" },
+                message: { text: "Hola 👋 Aquí tienes la lista de precios que pediste: [Tu Info]" },
                 messaging_type: "RESPONSE"
             },
             config
         );
-        console.log('✅ DM enviado correctamente');
+        console.log('✅ DM enviado');
 
     } catch (error) {
-        const errorMsg = error.response ? JSON.stringify(error.response.data) : error.message;
-        console.error(`❌ Error enviando respuesta (API): ${errorMsg}`);
+        // Ignoramos error si es duplicado, mostramos otros
+        console.error(`❌ Error API: ${error.response ? JSON.stringify(error.response.data) : error.message}`);
     }
 }
 
