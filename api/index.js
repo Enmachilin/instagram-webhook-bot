@@ -71,29 +71,42 @@ app.post('/api', async (req, res) => {
 });
 
 // Función auxiliar para responder
+// Función auxiliar para responder
 async function responderInstagram(commentId, userId) {
     const token = process.env.PAGE_ACCESS_TOKEN;
+    const version = 'v21.0'; // ✅ Actualizado a una versión más estable
 
     try {
+        // Configuración de Axios para evitar esperas eternas (Timeout de 10s)
+        const config = {
+            timeout: 10000,
+            headers: { Authorization: `Bearer ${token}` }
+        };
+
         // 1. Responder al Comentario Público
-        await axios.post(`https://graph.facebook.com/v18.0/${commentId}/replies`, {
-            message: "¡Hola! Te envié la info al privado 📩✨",
-            access_token: token
-        });
+        await axios.post(
+            `https://graph.facebook.com/${version}/${commentId}/replies`,
+            { message: "¡Hola! Te envié la info al privado 📩✨" },
+            config
+        );
         console.log('✅ Respuesta pública enviada');
 
         // 2. Enviar Mensaje Privado (DM)
-        // Nota: Esto usa 'recipient: { comment_id: ... }' para cumplir la regla de 24h
-        await axios.post(`https://graph.facebook.com/v18.0/me/messages`, {
-            recipient: { comment_id: commentId },
-            message: { text: "Hola 👋 Aquí tienes la información de precios: [Tu Info Aquí]" },
-            messaging_type: "RESPONSE",
-            access_token: token
-        });
+        await axios.post(
+            `https://graph.facebook.com/${version}/me/messages`,
+            {
+                recipient: { comment_id: commentId },
+                message: { text: "Hola 👋 Aquí tienes la información de precios: [Tu Info Aquí]" },
+                messaging_type: "RESPONSE"
+            },
+            config
+        );
         console.log('✅ DM enviado correctamente');
 
     } catch (error) {
-        console.error('❌ Error enviando respuesta (API):', error.response ? error.response.data : error.message);
+        // Mostrar error detallado si falla
+        const errorMsg = error.response ? JSON.stringify(error.response.data) : error.message;
+        console.error(`❌ Error enviando respuesta (API): ${errorMsg}`);
     }
 }
 
