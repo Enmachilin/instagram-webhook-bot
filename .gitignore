@@ -1,7 +1,28 @@
+# Variables de entorno (NUNCA subir a Git)
 .env
+.env.local
+.env.production
+
+# Dependencias
+node_modules/
+
+# Logs
+*.log
+npm-debug.log*
+
+# Vercel
+.vercel
+
+# Python
 .tmp/
 __pycache__/
 *.pyc
 .ipynb_checkpoints/
+
+# IDE
 .vscode/
 .idea/
+
+# Sistema
+.DS_Store
+Thumbs.db
