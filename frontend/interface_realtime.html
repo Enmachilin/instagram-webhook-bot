@@ -1,0 +1,360 @@
+<!DOCTYPE html>
+<html lang="es">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Helpdesk REAL-TIME Preview | Antigravity</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+        }
+
+        .custom-scrollbar::-webkit-scrollbar {
+            width: 4px;
+        }
+
+        .custom-scrollbar::-webkit-scrollbar-track {
+            background: transparent;
+        }
+
+        .custom-scrollbar::-webkit-scrollbar-thumb {
+            background: #e2e8f0;
+            border-radius: 10px;
+        }
+
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+            background: #cbd5e1;
+        }
+    </style>
+</head>
+
+<body class="bg-slate-50 antialiased overflow-hidden">
+    <div id="root">
+        <div class="h-screen w-screen flex items-center justify-center bg-white">
+            <div class="flex flex-col items-center gap-4">
+                <div class="w-12 h-12 border-4 border-indigo-600 border-t-transparent rounded-full animate-spin"></div>
+                <p class="text-slate-400 font-medium animate-pulse">Conectando a Firestore Real-Time...</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Scripts con carga ordenada -->
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+
+    <script type="text/babel">
+        // Firebase Config (Provided by User)
+        const firebaseConfig = {
+            apiKey: "AIzaSyB02LqVRfCslDa7ZjXHyrs0jNfZk4Ojjtk",
+            authDomain: "chatmulticanal.firebaseapp.com",
+            projectId: "chatmulticanal",
+            storageBucket: "chatmulticanal.firebasestorage.app",
+            messagingSenderId: "225232415110",
+            appId: "1:225232415110:web:1e5803cac2682675e16407"
+        };
+
+        // Initialize Firebase Compat (for easy CDN usage)
+        firebase.initializeApp(firebaseConfig);
+        const db = firebase.firestore();
+
+        const WEBHOOK_URL = "https://helpdesk-webhook.vercel.app/api";
+
+        const { useState, useEffect, useRef } = React;
+
+        const ChatInterface = ({ messages }) => {
+            const endOfMessagesRef = useRef(null);
+            useEffect(() => {
+                endOfMessagesRef.current?.scrollIntoView({ behavior: 'smooth' });
+            }, [messages]);
+
+            return (
+                <div className="flex flex-col h-full bg-slate-50 p-6 space-y-4 overflow-y-auto custom-scrollbar">
+                    {messages.map((msg) => {
+                        const isInternal = msg.type === 'internal_note';
+                        const isAgent = msg.type === 'outgoing';
+                        const isCustomer = msg.type === 'incoming';
+
+                        return (
+                            <div key={msg.id} className={`flex ${isCustomer ? 'justify-start' : 'justify-end'} w-full`}>
+                                <div className={`relative max-w-[75%] p-4 rounded-2xl shadow-sm border
+                                    ${isInternal ? 'bg-amber-50/80 border-amber-200 text-amber-900 shadow-amber-100/50' : ''}
+                                    ${isCustomer ? 'bg-white border-slate-100 text-slate-800' : ''}
+                                    ${isAgent ? 'bg-indigo-600 border-indigo-500 text-white' : ''}
+                                `}>
+                                    <div className="flex justify-between items-center mb-1.5 gap-4">
+                                        <div className="flex items-center gap-1.5">
+                                            <span className="font-bold text-[10px] uppercase tracking-wider opacity-70">
+                                                {isInternal ? 'Nota Interna' : (isAgent ? 'Tú' : 'Cliente')}
+                                            </span>
+                                        </div>
+                                        <span className="text-[10px] opacity-40 font-medium whitespace-nowrap">{msg.time}</span>
+                                    </div>
+                                    <p className="text-[13.5px] leading-relaxed whitespace-pre-wrap">
+                                        {msg.text}
+                                    </p>
+                                    {isInternal && <div className="absolute left-0 top-4 bottom-4 w-1 bg-amber-400 rounded-full -ml-1"></div>}
+                                </div>
+                            </div>
+                        );
+                    })}
+                    <div ref={endOfMessagesRef} />
+                </div>
+            );
+        };
+
+        const App = () => {
+            const [conversations, setConversations] = useState([]);
+            const [activeConversationId, setActiveConversationId] = useState(null);
+            const [messages, setMessages] = useState([]);
+            const [inputText, setInputText] = useState('');
+            const [loading, setLoading] = useState(true);
+            const [sending, setSending] = useState(false);
+
+            useEffect(() => {
+                // Listen for open conversations
+                const unsubscribe = db.collection("conversations")
+                    .where("status", "==", "open")
+                    .orderBy("updated_at", "desc")
+                    .onSnapshot(async (snapshot) => {
+                        const convs = [];
+                        for (const doc of snapshot.docs) {
+                            convs.push({ id: doc.id, ...doc.data() });
+                        }
+                        setConversations(convs);
+                        if (convs.length > 0 && !activeConversationId) {
+                            setActiveConversationId(convs[0].id);
+                        }
+                        setLoading(false);
+                    });
+
+                return () => unsubscribe();
+            }, []);
+
+            useEffect(() => {
+                if (!activeConversationId) return;
+
+                const unsubscribe = db.collection("messages")
+                    .where("conversation_id", "==", activeConversationId)
+                    .orderBy("timestamp", "asc")
+                    .onSnapshot((snapshot) => {
+                        const msgs = snapshot.docs.map(doc => ({
+                            id: doc.id,
+                            ...doc.data(),
+                            time: doc.data().timestamp?.toDate().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) || '...'
+                        }));
+                        setMessages(msgs);
+                    });
+
+                return () => unsubscribe();
+            }, [activeConversationId]);
+
+            useEffect(() => {
+                if (window.lucide) {
+                    window.lucide.createIcons();
+                }
+            }, [messages, conversations]);
+
+            const handleSend = async (e) => {
+                if (e) e.preventDefault();
+                if (!inputText.trim() || !activeConversationId || sending) return;
+
+                const isNote = inputText.startsWith('/note ');
+                const text = isNote ? inputText.replace('/note ', '') : inputText;
+                const currentConv = conversations.find(c => c.id === activeConversationId);
+
+                // Get customer data to find IDs
+                const customerSnap = await db.collection("customers").doc(currentConv.customer_id).get();
+                const customer = customerSnap.data();
+
+                setSending(true);
+                try {
+                    // 1. If not a note, send via Webhook to Meta
+                    if (!isNote) {
+                        const payload = {
+                            action: "send_reply",
+                            message_type: currentConv.message_type || "dm",
+                            message: text,
+                            recipient_id: currentConv.channel_source === "whatsapp" ? customer.wa_id : customer.ig_id,
+                            comment_id: currentConv.comment_id || null
+                        };
+
+                        const response = await fetch(WEBHOOK_URL, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify(payload)
+                        });
+
+                        if (!response.ok) {
+                            const errData = await response.json();
+                            throw new Error(errData.error || "Error al enviar a Meta");
+                        }
+                    }
+
+                    // 2. Save to Firestore to reflect in UI
+                    await db.collection("messages").add({
+                        conversation_id: activeConversationId,
+                        customer_id: currentConv.customer_id,
+                        type: isNote ? 'internal_note' : 'outgoing',
+                        text: text,
+                        timestamp: firebase.firestore.FieldValue.serverTimestamp()
+                    });
+
+                    // 3. Update conversation timestamp
+                    await db.collection("conversations").doc(activeConversationId).update({
+                        updated_at: firebase.firestore.FieldValue.serverTimestamp()
+                    });
+
+                    setInputText('');
+                } catch (error) {
+                    console.error("Error sending message:", error);
+                    alert("Error al enviar: " + error.message);
+                } finally {
+                    setSending(false);
+                }
+            };
+
+            if (loading) {
+                return (
+                    <div className="h-screen w-screen flex items-center justify-center bg-white text-center">
+                        <div className="flex flex-col items-center gap-4">
+                            <div className="w-12 h-12 border-4 border-indigo-600 border-t-transparent rounded-full animate-spin"></div>
+                            <p className="text-slate-400 font-medium">Buscando conversaciones en Firestore...</p>
+                            <p className="text-[10px] text-slate-300 max-w-xs">Asegúrate de tener las colecciones y reglas configuradas.</p>
+                        </div>
+                    </div>
+                );
+            }
+
+            const activeConv = conversations.find(c => c.id === activeConversationId);
+
+            return (
+                <div className="flex h-screen bg-white">
+                    <aside className="w-20 bg-indigo-950 flex flex-col items-center py-8 gap-10">
+                        <div className="w-10 h-10 bg-indigo-600 rounded-xl flex items-center justify-center text-white p-2.5">
+                            <i data-lucide="message-square"></i>
+                        </div>
+                        <nav className="flex flex-col gap-8 text-indigo-300/30">
+                            <i data-lucide="users" className="w-6 h-6"></i>
+                            <i data-lucide="bar-chart-3" className="w-6 h-6"></i>
+                            <i data-lucide="settings" className="w-6 h-6"></i>
+                        </nav>
+                    </aside>
+
+                    <div className="w-80 border-r border-slate-100 flex flex-col hidden lg:flex bg-white">
+                        <div className="p-6 border-b border-slate-50">
+                            <h1 className="text-xl font-bold text-slate-900 mb-4 tracking-tight">Helpdesk</h1>
+                            <div className="relative group">
+                                <i data-lucide="search" className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400"></i>
+                                <input type="text" placeholder="Buscar chats..." className="w-full bg-slate-50 border-none rounded-xl pl-10 pr-4 py-2.5 text-[13px] outline-none" />
+                            </div>
+                        </div>
+                        <div className="flex-1 overflow-y-auto custom-scrollbar p-3 space-y-2">
+                            {conversations.map(conv => (
+                                <div
+                                    key={conv.id}
+                                    onClick={() => setActiveConversationId(conv.id)}
+                                    className={`p-4 rounded-2xl cursor-pointer relative overflow-hidden transition-all
+                                        ${activeConversationId === conv.id ? 'bg-indigo-50 border border-indigo-100' : 'hover:bg-slate-50 border border-transparent'}`}
+                                >
+                                    {activeConversationId === conv.id && <div className="absolute left-0 top-0 bottom-0 w-1 bg-indigo-600"></div>}
+                                    <div className="flex justify-between items-center mb-1">
+                                        <span className="font-bold text-slate-900 text-[13px]">Conv: {conv.id.slice(0, 8)}</span>
+                                        <div className="flex items-center gap-2">
+                                            <span className={`text-[9px] px-1.5 py-0.5 rounded-full font-bold uppercase ${conv.message_type === 'comment' ? 'bg-amber-100 text-amber-700' : 'bg-blue-100 text-blue-700'}`}>
+                                                {conv.message_type || 'dm'}
+                                            </span>
+                                            <span className="text-[10px] text-slate-400 font-medium uppercase">{conv.channel_source}</span>
+                                        </div>
+                                    </div>
+                                    <p className="text-[12px] text-slate-500 truncate pr-4">Status: {conv.status}</p>
+                                </div>
+                            ))}
+                            {conversations.length === 0 && (
+                                <div className="p-8 text-center text-slate-400 opacity-60">
+                                    <i data-lucide="info" className="w-8 h-8 mx-auto mb-2 opacity-20"></i>
+                                    <p className="text-xs">No hay conversaciones abiertas.</p>
+                                </div>
+                            )}
+                        </div>
+                    </div>
+
+                    <div className="flex-1 flex flex-col bg-slate-50/30">
+                        {activeConversationId ? (
+                            <>
+                                <header className="h-20 px-8 flex items-center justify-between border-b border-slate-100 bg-white/70 backdrop-blur-xl z-10">
+                                    <div className="flex items-center gap-4">
+                                        <div className={`w-11 h-11 rounded-2xl flex items-center justify-center text-white font-bold text-lg ${activeConv?.message_type === 'comment' ? 'bg-amber-500' : 'bg-indigo-600'}`}>
+                                            {activeConv?.message_type === 'comment' ? 'C' : 'DM'}
+                                        </div>
+                                        <div>
+                                            <h2 className="font-bold text-slate-900 text-[15px]">ID: {activeConversationId.slice(0, 8)}</h2>
+                                            <p className="text-[11px] text-slate-400 font-medium uppercase">
+                                                {activeConv?.channel_source} • {activeConv?.message_type || 'DM'}
+                                            </p>
+                                        </div>
+                                    </div>
+                                    <div className="flex items-center gap-3">
+                                        <span className={`text-xs px-3 py-1.5 rounded-full font-bold ${sending ? 'bg-amber-100 text-amber-700 animate-pulse' : 'bg-green-100 text-green-700'}`}>
+                                            {sending ? 'Enviando a Meta...' : 'En línea'}
+                                        </span>
+                                    </div>
+                                </header>
+                                <main className="flex-1 overflow-hidden relative">
+                                    <ChatInterface messages={messages} />
+                                </main>
+                                <footer className="p-6 bg-white border-t border-slate-100">
+                                    <div className="max-w-4xl mx-auto">
+                                        <div className="flex items-end gap-3 bg-slate-50/80 border border-slate-100 rounded-[28px] p-2 pl-4 focus-within:bg-white focus-within:ring-4 focus-within:ring-indigo-50 transition-all">
+                                            <i data-lucide="paperclip" className="w-5 h-5 text-slate-400 mb-3 ml-2"></i>
+                                            <textarea
+                                                value={inputText}
+                                                disabled={sending}
+                                                onChange={(e) => setInputText(e.target.value)}
+                                                onKeyDown={(e) => e.key === 'Enter' && !e.shiftKey && (e.preventDefault(), handleSend())}
+                                                placeholder={activeConv?.message_type === 'comment' ? "Respuesta pública al comentario..." : "Escribe un mensaje privado..."}
+                                                className="flex-1 bg-transparent border-none focus:ring-0 text-[14px] text-slate-700 py-3 outline-none resize-none max-h-32 min-h-[44px]"
+                                                rows="1"
+                                            ></textarea>
+                                            <button
+                                                onClick={handleSend}
+                                                disabled={sending || !inputText.trim()}
+                                                className={`p-3.5 rounded-2xl shadow-lg transition-all ${sending || !inputText.trim() ? 'bg-slate-300' : 'bg-indigo-600 text-white hover:scale-105 active:scale-95'}`}
+                                            >
+                                                {sending ? (
+                                                    <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                                                ) : (
+                                                    <i data-lucide="send" className="w-5 h-5"></i>
+                                                )}
+                                            </button>
+                                        </div>
+                                        <p className="text-[10px] text-slate-400 mt-3 text-center">
+                                            Usa <span className="font-bold text-amber-600">/note</span> para dejar una nota interna que el cliente no verá.
+                                        </p>
+                                    </div>
+                                </footer>
+                            </>
+                        ) : (
+                            <div className="flex-1 flex flex-col items-center justify-center opacity-30">
+                                <i data-lucide="message-square" className="w-20 h-20 mb-6 text-indigo-900"></i>
+                                <h3 className="text-xl font-bold text-slate-900 text-center">Selecciona un chat<br /><span className="text-xs font-normal">Escuchando eventos de Meta en tiempo real</span></h3>
+                            </div>
+                        )}
+                    </div>
+                </div>
+            );
+        };
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+
+    </script>
+</body>
+
+</html>

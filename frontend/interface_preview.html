@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="es">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Helpdesk Omnicanal | Antigravity Preview</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+        }
+
+        .custom-scrollbar::-webkit-scrollbar {
+            width: 4px;
+        }
+
+        .custom-scrollbar::-webkit-scrollbar-track {
+            background: transparent;
+        }
+
+        .custom-scrollbar::-webkit-scrollbar-thumb {
+            background: #e2e8f0;
+            border-radius: 10px;
+        }
+
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+            background: #cbd5e1;
+        }
+    </style>
+</head>
+
+<body class="bg-slate-50 antialiased overflow-hidden">
+    <div id="root">
+        <div class="h-screen w-screen flex items-center justify-center bg-white">
+            <div class="flex flex-col items-center gap-4">
+                <div class="w-12 h-12 border-4 border-indigo-600 border-t-transparent rounded-full animate-spin"></div>
+                <p class="text-slate-400 font-medium animate-pulse">Cargando Helpdesk...</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Scripts con carga ordenada -->
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+
+    <script type="text/babel">
+        const { useState, useEffect, useRef } = React;
+
+        const ChatInterface = ({ messages }) => {
+            const endOfMessagesRef = useRef(null);
+            useEffect(() => {
+                endOfMessagesRef.current?.scrollIntoView({ behavior: 'smooth' });
+            }, [messages]);
+
+            return (
+                <div className="flex flex-col h-full bg-slate-50 p-6 space-y-4 overflow-y-auto custom-scrollbar">
+                    {messages.map((msg) => {
+                        const isInternal = msg.type === 'internal_note';
+                        const isAgent = msg.type === 'outgoing';
+                        const isCustomer = msg.type === 'incoming';
+
+                        return (
+                            <div key={msg.id} className={`flex ${isCustomer ? 'justify-start' : 'justify-end'} w-full`}>
+                                <div className={`relative max-w-[75%] p-4 rounded-2xl shadow-sm border
+                                    ${isInternal ? 'bg-amber-50/80 border-amber-200 text-amber-900 shadow-amber-100/50' : ''}
+                                    ${isCustomer ? 'bg-white border-slate-100 text-slate-800' : ''}
+                                    ${isAgent ? 'bg-indigo-600 border-indigo-500 text-white' : ''}
+                                `}>
+                                    <div className="flex justify-between items-center mb-1.5 gap-4">
+                                        <div className="flex items-center gap-1.5">
+                                            <span className="font-bold text-[10px] uppercase tracking-wider opacity-70">
+                                                {isInternal ? 'Nota Interna' : (isAgent ? 'Tú' : 'Cliente')}
+                                            </span>
+                                        </div>
+                                        <span className="text-[10px] opacity-40 font-medium whitespace-nowrap">{msg.time}</span>
+                                    </div>
+                                    <p className="text-[13.5px] leading-relaxed whitespace-pre-wrap">{msg.text}</p>
+                                    {isInternal && <div className="absolute left-0 top-4 bottom-4 w-1 bg-amber-400 rounded-full -ml-1"></div>}
+                                </div>
+                            </div>
+                        );
+                    })}
+                    <div ref={endOfMessagesRef} />
+                </div>
+            );
+        };
+
+        const App = () => {
+            const [messages, setMessages] = useState([
+                { id: 1, type: 'incoming', text: 'Hola, ¿podrían ayudarme con el estado de mi pedido #1234?', time: '10:30 AM' },
+                { id: 2, type: 'internal_note', text: 'El cliente parece premium. Verificar stock antes de responder.', time: '10:31 AM' },
+                { id: 3, type: 'outgoing', text: '¡Hola! Claro que sí, estoy revisando el estado del pedido #1234. Un momento por favor.', time: '10:32 AM' },
+                { id: 4, type: 'internal_note', text: 'Stock confirmado en bodega central.', time: '10:45 AM' },
+                { id: 5, type: 'incoming', text: 'Muchas gracias, espero su respuesta.', time: '10:50 AM' },
+            ]);
+            const [inputText, setInputText] = useState('');
+
+            useEffect(() => {
+                if (window.lucide) {
+                    window.lucide.createIcons();
+                }
+            }, [messages]);
+
+            const handleSend = (e) => {
+                if (e) e.preventDefault();
+                if (!inputText.trim()) return;
+                const isNote = inputText.startsWith('/note ');
+                const text = isNote ? inputText.replace('/note ', '') : inputText;
+
+                const newMessage = {
+                    id: Date.now(),
+                    type: isNote ? 'internal_note' : 'outgoing',
+                    text: text,
+                    time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+                };
+                setMessages(prev => [...prev, newMessage]);
+                setInputText('');
+            };
+
+            return (
+                <div className="flex h-screen bg-white">
+                    <aside className="w-20 bg-indigo-950 flex flex-col items-center py-8 gap-10">
+                        <div className="w-10 h-10 bg-indigo-600 rounded-xl flex items-center justify-center text-white p-2.5">
+                            <i data-lucide="message-square"></i>
+                        </div>
+                        <nav className="flex flex-col gap-8 text-indigo-300/30">
+                            <i data-lucide="users" className="w-6 h-6"></i>
+                            <i data-lucide="bar-chart-3" className="w-6 h-6"></i>
+                            <i data-lucide="settings" className="w-6 h-6"></i>
+                        </nav>
+                    </aside>
+
+                    <div className="w-80 border-r border-slate-100 flex flex-col hidden lg:flex bg-white">
+                        <div className="p-6 border-b border-slate-50">
+                            <h1 className="text-xl font-bold text-slate-900 mb-4">Mensajes</h1>
+                            <div className="relative group">
+                                <i data-lucide="search" className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400"></i>
+                                <input type="text" placeholder="Buscar chats..." className="w-full bg-slate-50 border-none rounded-xl pl-10 pr-4 py-2.5 text-[13px] outline-none" />
+                            </div>
+                        </div>
+                        <div className="flex-1 overflow-y-auto custom-scrollbar p-3">
+                            <div className="p-4 bg-indigo-50/50 rounded-2xl border border-indigo-100/50 cursor-pointer relative overflow-hidden group">
+                                <div className="absolute left-0 top-0 bottom-0 w-1 bg-indigo-600"></div>
+                                <div className="flex justify-between items-center mb-1">
+                                    <span className="font-bold text-slate-900 text-[13px]">Juan Pérez</span>
+                                    <span className="text-[10px] text-slate-400 font-medium">10:50 AM</span>
+                                </div>
+                                <p className="text-[12px] text-slate-500 truncate pr-4">Muchas gracias, espero su respuesta.</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div className="flex-1 flex flex-col bg-slate-50/30">
+                        <header className="h-20 px-8 flex items-center justify-between border-b border-slate-100 bg-white/70 backdrop-blur-xl z-10">
+                            <div className="flex items-center gap-4">
+                                <div className="w-11 h-11 bg-indigo-600 rounded-2xl flex items-center justify-center text-white font-bold text-lg">JP</div>
+                                <div>
+                                    <h2 className="font-bold text-slate-900 text-[15px]">Juan Pérez</h2>
+                                    <p className="text-[11px] text-slate-400 font-medium">WhatsApp · <span className="text-emerald-500">En línea</span></p>
+                                </div>
+                            </div>
+                            <div className="flex items-center gap-3">
+                                <button className="px-4 py-2 bg-white border border-slate-200 text-slate-700 rounded-xl text-xs font-bold">Reasignar</button>
+                                <button className="px-4 py-2 bg-indigo-600 text-white rounded-xl text-xs font-bold">Finalizar</button>
+                            </div>
+                        </header>
+
+                        <main className="flex-1 overflow-hidden relative">
+                            <ChatInterface messages={messages} />
+                        </main>
+
+                        <footer className="p-6 bg-white border-t border-slate-100">
+                            <div className="max-w-4xl mx-auto">
+                                <div className="flex items-end gap-3 bg-slate-50/80 border border-slate-100 rounded-[28px] p-2 pl-4 focus-within:bg-white focus-within:ring-4 focus-within:ring-indigo-50 transition-all">
+                                    <i data-lucide="paperclip" className="w-5 h-5 text-slate-400 mb-3 ml-2"></i>
+                                    <textarea
+                                        value={inputText}
+                                        onChange={(e) => setInputText(e.target.value)}
+                                        onKeyDown={(e) => e.key === 'Enter' && !e.shiftKey && (e.preventDefault(), handleSend())}
+                                        placeholder="Escribe un mensaje o /note para nota..."
+                                        className="flex-1 bg-transparent border-none focus:ring-0 text-[14px] text-slate-700 py-3 outline-none resize-none max-h-32 min-h-[44px]"
+                                        rows="1"
+                                    ></textarea>
+                                    <button onClick={handleSend} className="p-3.5 bg-indigo-600 text-white rounded-2xl shadow-lg">
+                                        <i data-lucide="send" className="w-5 h-5"></i>
+                                    </button>
+                                </div>
+                                <div className="mt-3 text-[10px] text-slate-400 font-bold uppercase tracking-wider text-center">
+                                    /note para notas internas
+                                </div>
+                            </div>
+                        </footer>
+                    </div>
+                </div>
+            );
+        };
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+
+</html>

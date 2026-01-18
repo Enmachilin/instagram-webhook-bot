@@ -1,0 +1,40 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // Función auxiliar para verificar si el usuario es un agente autenticado
+    function isAgent() {
+      return request.auth != null;
+    }
+
+    // Reglas para Clientes
+    match /customers/{customerId} {
+      allow read, write: if isAgent();
+    }
+
+    // Reglas para Conversaciones
+    match /conversations/{conversationId} {
+      // Un agente puede leer si la conversación está asignada a él o si no tiene dueño (cola)
+      allow read: if isAgent() && (
+        resource.data.assigned_agent_id == request.auth.uid || 
+        resource.data.assigned_agent_id == null
+      );
+      
+      // Permitir creación e inicialización
+      allow create: if isAgent();
+      
+      // Solo el agente asignado puede actualizar el estado o reasignar (cola abierta a todos)
+      allow update: if isAgent() && (
+        resource.data.assigned_agent_id == request.auth.uid || 
+        resource.data.assigned_agent_id == null
+      );
+    }
+
+    // Reglas para Mensajes
+    match /messages/{messageId} {
+      allow read: if isAgent(); // Simplificado para el MVP
+      allow create: if isAgent();
+    }
+  }
+}
